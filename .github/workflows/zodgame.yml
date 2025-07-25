@@ -2,7 +2,7 @@ name: zodgame
 
 on:
   schedule:
-  - cron: "0 0 * * *"
+  - cron: "35 23 * * *"  # 改为 UTC 时间 23:35，即北京时间 7:35
   
   push:
     branches: [ main ]
