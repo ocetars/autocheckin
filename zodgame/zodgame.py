@@ -2,7 +2,9 @@
 import io
 import re
 import sys
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer,encoding='utf-8')
+import time
+
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
 import undetected_chromedriver as uc
 from selenium.webdriver.support.ui import WebDriverWait
@@ -91,7 +93,7 @@ def zodgame_task(driver, formhash):
                 print(f"【Log】任务 {idx+1} 广告页检查失败。")
                 pass
 
-            try:     
+            try:    
                 check_url = re.search("""showWindow\('check', '(.*)'\);""", on_click, re.S)[1]
                 driver.get(f"https://zodgame.xyz/{check_url}")
                 WebDriverWait(driver, 240).until(
@@ -114,47 +116,79 @@ def zodgame_task(driver, formhash):
     return success
 
 def zodgame(cookie_string):
-    options = uc.ChromeOptions()
-    options.add_argument("--disable-popup-blocking")
-    driver = uc.Chrome(driver_executable_path = """C:\SeleniumWebDrivers\ChromeDriver\chromedriver.exe""",
-                       browser_executable_path = """C:\Program Files\Google\Chrome\Application\chrome.exe""",
-                       options = options)
-
-    # Load cookie
-    driver.get("https://zodgame.xyz/")
-
-    if cookie_string.startswith("cookie:"):
-        cookie_string = cookie_string[len("cookie:"):]
-    cookie_string = cookie_string.replace("/","%2")
-    cookie_dict = [ 
-        {"name" : x.split('=')[0].strip(), "value": x.split('=')[1].strip()} 
-        for x in cookie_string.split(';')
-    ]
-
-    driver.delete_all_cookies()
-    for cookie in cookie_dict:
-        if cookie["name"] in ["qhMq_2132_saltkey", "qhMq_2132_auth"]:
-            driver.add_cookie({
-                "domain": "zodgame.xyz",
-                "name": cookie["name"],
-                "value": cookie["value"],
-                "path": "/",
-            })
+    max_retries = 5
     
-    driver.get("https://zodgame.xyz/")
-    
-    WebDriverWait(driver, 240).until(
-        lambda x: x.title != "Just a moment..."
-    )
-    assert len(driver.find_elements(By.XPATH, '//a[text()="用户名"]')) == 0, "Login fails. Please check your cookie."
-        
-    formhash = driver.find_element(By.XPATH, '//input[@name="formhash"]').get_attribute('value')
-    assert zodgame_checkin(driver, formhash) and zodgame_task(driver, formhash), "Checkin failed or task failed."
+    for attempt in range(1, max_retries + 1):
+        driver = None
+        try:
+            print(f"\n【系统】开始第 {attempt} 次执行任务...")
+            options = uc.ChromeOptions()
+            options.add_argument("--disable-popup-blocking")
+            
+            # 使用 raw string (r) 避免 Python 转义字符报错
+            driver = uc.Chrome(driver_executable_path = r"C:\SeleniumWebDrivers\ChromeDriver\chromedriver.exe",
+                               browser_executable_path = r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+                               options = options)
 
-    driver.close()
-    driver.quit()
+            # Load cookie
+            driver.get("https://zodgame.xyz/")
+
+            if cookie_string.startswith("cookie:"):
+                cookie_string = cookie_string[len("cookie:"):]
+            cookie_string = cookie_string.replace("/","%2")
+            
+            # 增加对空字符的安全过滤 if '=' in x
+            cookie_dict = [ 
+                {"name" : x.split('=')[0].strip(), "value": x.split('=')[1].strip()} 
+                for x in cookie_string.split(';') if '=' in x
+            ]
+
+            driver.delete_all_cookies()
+            for cookie in cookie_dict:
+                if cookie["name"] in ["qhMq_2132_saltkey", "qhMq_2132_auth"]:
+                    driver.add_cookie({
+                        "domain": "zodgame.xyz",
+                        "name": cookie["name"],
+                        "value": cookie["value"],
+                        "path": "/",
+                    })
+            
+            driver.get("https://zodgame.xyz/")
+            
+            WebDriverWait(driver, 240).until(
+                lambda x: x.title != "Just a moment..."
+            )
+            assert len(driver.find_elements(By.XPATH, '//a[text()="用户名"]')) == 0, "Login fails. Please check your cookie."
+                
+            formhash = driver.find_element(By.XPATH, '//input[@name="formhash"]').get_attribute('value')
+            assert zodgame_checkin(driver, formhash) and zodgame_task(driver, formhash), "Checkin failed or task failed."
+
+            print(f"【系统】恭喜！所有流程在第 {attempt} 次尝试时圆满成功！")
+            return  # 成功后直接退出函数
+
+        except Exception as e:
+            print(f"【系统】第 {attempt} 次执行失败，错误信息: {e}")
+            if attempt < max_retries:
+                print(f"【系统】等待 30 秒后进行第 {attempt + 1} 次重试...\n")
+                time.sleep(30)
+            else:
+                print("【系统】已达到最大失败次数 (5次)，整体任务失败。")
+                sys.exit(1) # 超过 5 次则抛出错误并退出脚本
+                
+        finally:
+            # 确保不论成功或失败，都把当前的 driver 关闭，防止后台残留残留 Chrome 进程卡死电脑
+            if driver:
+                try:
+                    driver.close()
+                    driver.quit()
+                except:
+                    pass
     
 if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        print("【错误】未传入 Cookie 参数。")
+        sys.exit(1)
+        
     cookie_string = sys.argv[1]
     assert cookie_string
     
